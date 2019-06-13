@@ -1,0 +1,95 @@
+#!/bin/bash
+# this script will pull down the repos for the mcbin and build them on fedora
+# it will also install some prereq packages if it can't find the aarch64 cross compiler
+# to setup the repo run it like:
+#   `build_cross_marvell setup_repo`
+# or for a build
+#   `build_cross_marvell`
+#
+# the output file will be flash-img.bin
+#
+# to boot SD, make sure mcbin jumpers are set for SD boot
+# http://wiki.macchiatobin.net/tiki-index.php?page=MACCHIATObin+Interface+list#Boot_Selection
+# then assure a partition table like:
+# Device     Boot Start      End  Sectors  Size Id Type
+#/dev/sdd1        4096    69631    65536   32M 83 Linux
+#/dev/sdd2       69632 15523839 15454208  7.4G 83 Linux
+# and copy the image to the first partition like:
+#dd if=trusted-firmware-a/build/a80x0_mcbin/debug/flash-image.bin of=/dev/sdb1 conv=fdatasync
+
+
+
+# check the readme @ https://github.com/tianocore/edk2-platforms
+FIRST_PARM=$1
+
+
+# Update where the cross compiler is if the linaro gcc is in use
+#export CROSS_COMPILE=/home/jlinton/bin/gcc-linaro-6.2.1-2016.11-x86_64_aarch64-linux-gnu/bin/aarch64-linux-gnu-
+#export PATH=$PATH:/home/jlinton/bin/gcc-linaro-6.2.1-2016.11-x86_64_aarch64-linux-gnu/bin
+# otherwise detect it
+which aarch64-linux-gnu-gcc >/dev/null 
+if [[ $? -eq 1 ]]; then
+    # not found try to install a distro provided cross compiler, and various other things the build will need
+    sudo dnf install -y gcc-aarch64-linux-gnu git make dtc acpica-tools gcc g++ binutils openssl-devel
+    if [[ $? -eq 1 ]]; then
+	echo "unable to locate a cross compiler, please edit the script"
+	exit 1
+    fi
+fi
+export CROSS_COMPILE=`which aarch64-linux-gnu-gcc |cut -d- -f1-3`"-"
+
+# set some EDK enviroment vars
+export GCC5_AARCH64_PREFIX=aarch64-linux-gnu-
+export BASEDIR=$PWD/edk2
+export WORKSPACE=$PWD
+export PACKAGES_PATH=$WORKSPACE/edk2:$WORKSPACE/edk2-platforms:$WORKSPACE/edk2-non-osi
+
+export NUM_CPUS=$((`getconf _NPROCESSORS_ONLN` + 2))
+export PATH=$PATH:uefi-tool:output
+
+# specifiy setup_repo on first run to pull the repos
+if [[ "$FIRST_PARM" == "setup_repo" ]]; then
+    git clone https://github.com/tianocore/edk2
+    git clone https://github.com/tianocore/edk2-platforms
+    git clone https://github.com/tianocore/edk2-non-osi
+    cd edk2
+    git submodule init
+    git submodule update
+    cd ..
+    make -C edk2/BaseTools
+
+    git clone https://github.com/ARM-software/arm-trusted-firmware
+    mv arm-trusted-firmware trusted-firmware-a
+
+    git clone https://github.com/MarvellEmbeddedProcessors/binaries-marvell.git
+    cd binaries-marvell
+    git checkout binaries-marvell-armada-18.12
+    cd ..    
+    git clone https://github.com/MarvellEmbeddedProcessors/mv-ddr-marvell.git
+    cd mv-ddr-marvell
+
+    git checkout mv_ddr-armada-atf-mainline
+    cd ..
+    ln -s ../mv-ddr-marvell trusted-firmware-a
+    echo "ok, rerun without setup_repo"
+    exit 0
+fi
+
+source edk2/edksetup.sh
+
+# buidl a debug build, update atf paths below if you change this
+build -n$NUM_CPUS -a AARCH64 -t GCC5 -b DEBUG -p edk2-platforms/Platform/SolidRun/Armada80x0McBin/Armada80x0McBin.dsc
+
+# build was ok, lets build trusted firmware around the image
+if [[ "$?" == "0" ]]; then
+ cd trusted-firmware-a
+ #PLAT=a80x0_mcbin ~/bin/build_armtf
+ COT=0
+ export SCP_BL2=$WORKSPACE/binaries-marvell/mrvl_scp_bl2.img
+ export BL33=$WORKSPACE/Build/Armada80x0McBin-AARCH64/DEBUG_GCC5/FV/ARMADA_EFI.fd
+ export MV_DDR_PATH=mv-ddr-marvell
+ export USE_COHERENT_MEM=0
+ make PLAT=a80x0_mcbin DEBUG=1 clean
+ make PLAT=a80x0_mcbin GENERATE_COT=$COT DEBUG=1 all fip
+ cd -
+fi
