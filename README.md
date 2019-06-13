@@ -1,6 +1,29 @@
 # marvell_efi_build
 scripts to clone and build the marvell uefi firmware
 
+To checkout the marvell repo's do 
+
+./build_cross_marvell setup_repo
+
+to build the image
+
+./build_cross_marvell
+
+The first time this is run if it can't find a aarch64 cross compiler it will
+attempt to use the fedora/dnf package manager to install a cross compiler
+and a few other dependencies. Right now those are:
+
+gcc-aarch64-linux-gnu
+git
+make
+dtc
+acpica-tools
+gcc
+g++
+binutils
+openssl-devel
+
+
 There is also a binary artifact built with the linaro
 gcc 6.2 cross compiler and a few bugs tweaked/fixed.
 
