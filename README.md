@@ -11,8 +11,10 @@ to build the image
 
 The first time this is run if it can't find a aarch64 cross compiler it will
 attempt to use the fedora/dnf package manager to install a cross compiler
+
 and a few other dependencies. Right now those are:
 
+<pre>
 gcc-aarch64-linux-gnu
 git
 make
@@ -22,6 +24,7 @@ gcc
 g++
 binutils
 openssl-devel
+</pre>
 
 
 There is also a binary artifact built with the linaro
